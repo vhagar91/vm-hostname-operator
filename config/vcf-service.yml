@@ -1,0 +1,22 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:yaml", "yaml")
+#@ load("@ytt:template", "template")
+
+#@ load("hostname-operator.lib.yml", "hostnameOperatorCRs")
+
+#@ def rendered_crs():
+#@   results = []
+#@   for region in data.values.regions:
+#@     for cr in hostnameOperatorCRs(region):
+#@       if cr:
+#@         results.append(cr)
+#@       end
+#@     end
+#@   end
+#@   return results
+#@ end
+
+#@ for cr in rendered_crs():
+---
+#@ cr
+#@ end

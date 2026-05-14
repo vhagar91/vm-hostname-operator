@@ -1,0 +1,25 @@
+#@ load("@ytt:data", "data")
+
+#! Transform Service Manager Inventory to service values
+---
+#@ def transform_regions():
+#@   result = []
+#@   for region in data.values.regions:
+#@     result.append({
+#@       "name": region.name,
+#@       "hostSupervisor": {
+#@         "name": region.supervisors[0].name,
+#~         "configuration": {
+#~           "logLevel": "info",
+#~           "vcenterValidation": True,
+#~           "defaultTemplate": "vm-###",
+#~           "counterStart": 1,
+#~         },
+#~       },
+#~       "clientSupervisors": [s.name for s in region.supervisors],
+#~     })
+#~   end
+#~   return result
+#~ end
+
+regions: #@ transform_regions()

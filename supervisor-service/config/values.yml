@@ -1,0 +1,24 @@
+#@data/values
+#@overlay/match-child-defaults missing_ok=True
+---
+#! Default values - overridden at install time via SupervisorService CR values
+vcenterValidation: true
+defaultTemplate: "vm-###"
+counterStart: 1
+logLevel: info
+
+#! Image reference (resolved at build time)
+image:
+  repository: hostname-operator
+  tag: 1.0.0
+  pullPolicy: IfNotPresent
+
+#! Webhook configuration
+webhook:
+  port: 9443
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  serviceName: hostname-operator-webhook-service
+  secretName: hostname-operator-webhook-cert
+
+#! Namespace to deploy into
+namespace: vm-operator-system

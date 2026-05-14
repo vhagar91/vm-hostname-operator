@@ -1,0 +1,5 @@
+---
+apiVersion: imgpkg.carvel.dev/v1alpha1
+kind: ImagesLock
+spec:
+  images: []

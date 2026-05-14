@@ -1,0 +1,11 @@
+regions:
+  - name: us-west-1
+    hostSupervisor:
+      name: supervisor-vc1
+      configuration:
+        logLevel: info
+        vcenterValidation: true
+        defaultTemplate: "vm-###"
+        counterStart: 1
+    clientSupervisors:
+      - supervisor-vc1

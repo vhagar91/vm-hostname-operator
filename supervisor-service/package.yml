@@ -1,0 +1,37 @@
+apiVersion: data.packaging.carvel.dev/v1alpha1
+kind: PackageMetadata
+metadata:
+  name: hostname-operator.vcf.vmware.com
+spec:
+  displayName: VM Hostname Operator
+  shortDescription: Automates VM hostname generation from templates with vCenter duplicate validation
+  providerName: VCF Services
+
+---
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: Package
+metadata:
+  name: hostname-operator.vcf.vmware.com.1.0.0
+spec:
+  refName: hostname-operator.vcf.vmware.com
+  version: 1.0.0
+  releaseNotes: |
+    Initial release of the VM Hostname Operator.
+    - Configurable hostname template with incremental counters
+    - vCenter duplicate hostname validation
+    - Annotation-based per-VM template override support
+  template:
+    spec:
+      fetch:
+        - imgpkgBundle:
+            image: hostname-operator:1.0.0
+      template:
+        - ytt:
+            paths:
+              - config/
+            ignoreUnknownComments: true
+      deploy:
+        - kapp:
+            rawOptions:
+              - --wait-timeout=5m
+              - --dangerous-allow-empty-list-of-resources=true

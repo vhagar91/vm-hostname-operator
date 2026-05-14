@@ -1,0 +1,265 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:yaml", "yaml")
+
+#@ def namespace():
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: #@ data.values.namespace
+#@ end
+
+#@ def rbac():
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hostname-operator
+  namespace: #@ data.values.namespace
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hostname-operator
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["vmoperator.vmware.com"]
+    resources: ["virtualmachines"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["hostname.vcf.vmware.com"]
+    resources: ["hostnamecounters"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["hostname.vcf.vmware.com"]
+    resources: ["hostnamecounters/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hostname-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hostname-operator
+subjects:
+  - kind: ServiceAccount
+    name: hostname-operator
+    namespace: #@ data.values.namespace
+#@ end
+
+#@ def deployment():
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hostname-operator
+  namespace: #@ data.values.namespace
+  labels:
+    app: hostname-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hostname-operator
+  template:
+    metadata:
+      labels:
+        app: hostname-operator
+    spec:
+      serviceAccountName: hostname-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: #@ data.values.image.repository + ":" + data.values.image.tag
+          imagePullPolicy: #@ data.values.image.pullPolicy
+          args:
+            - --log-level=#@ data.values.logLevel
+            - --default-template=#@ data.values.defaultTemplate
+            - --counter-start=#@ str(data.values.counterStart)
+            - --vcenter-validation=#@ str(data.values.vcenterValidation)
+          ports:
+            - containerPort: #@ data.values.webhook.port
+              name: webhook
+              protocol: TCP
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: #@ data.values.webhook.certDir
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: #@ data.values.webhook.secretName
+            defaultMode: 420
+#@ end
+
+#@ def webhook_service():
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: #@ data.values.webhook.serviceName
+  namespace: #@ data.values.namespace
+  labels:
+    app: hostname-operator
+spec:
+  ports:
+    - port: 443
+      targetPort: #@ data.values.webhook.port
+      name: webhook
+  selector:
+    app: hostname-operator
+#@ end
+
+#@ def crd():
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: hostnamecounters.hostname.vcf.vmware.com
+spec:
+  group: hostname.vcf.vmware.com
+  names:
+    kind: HostnameCounter
+    listKind: HostnameCounterList
+    plural: hostnamecounters
+    singular: hostnamecounter
+    shortNames:
+      - hnc
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - template
+              properties:
+                template:
+                  type: string
+                  description: "Hostname template pattern (e.g., 'vm-###' where # is a digit placeholder)"
+                currentIndex:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                  description: "Current index for the next hostname generation"
+                namespaceScope:
+                  type: string
+                  description: "Namespace this counter applies to (empty = cluster-wide)"
+                locked:
+                  type: boolean
+                  default: false
+                  description: "Lock prevents concurrent counter updates"
+                lockedAt:
+                  type: string
+                  format: date-time
+                  description: "Timestamp when the counter was locked"
+            status:
+              type: object
+              properties:
+                lastGenerated:
+                  type: string
+                  format: date-time
+                  description: "Timestamp of last hostname generation"
+                lastHostname:
+                  type: string
+                  description: "Last hostname generated"
+                generationCount:
+                  type: integer
+                  description: "Total number of hostnames generated"
+      additionalPrinterColumns:
+        - name: Template
+          type: string
+          jsonPath: .spec.template
+        - name: Current Index
+          type: integer
+          jsonPath: .spec.currentIndex
+        - name: Namespace
+          type: string
+          jsonPath: .spec.namespaceScope
+#@ end
+
+#@ def mutating_webhook():
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: hostname-operator-mutating-webhook
+  labels:
+    app: hostname-operator
+webhooks:
+  - name: hostname.hostname-operator.vcf.vmware.com
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: #@ data.values.webhook.serviceName
+        namespace: #@ data.values.namespace
+        path: /mutate-vmoperator-vmware-com-v1alpha6-virtualmachine
+      caBundle: Cg==
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups:
+          - vmoperator.vmware.com
+        apiVersions:
+          - v1alpha1
+          - v1alpha2
+          - v1alpha3
+          - v1alpha4
+          - v1alpha5
+          - v1alpha6
+        operations:
+          - CREATE
+        resources:
+          - virtualmachines
+        scope: Namespaced
+    sideEffects: None
+    timeoutSeconds: 10
+    objectSelector:
+      matchExpressions:
+        - key: hostname.vcf.vmware.com/template
+          operator: Exists
+    reinvocationPolicy: IfNeeded
+#@ end
+
+#@ def all_resources():
+#@   return namespace() + rbac() + crd() + deployment() + webhook_service() + mutating_webhook()
+#@ end
+
+#@ for doc in yaml.split(yaml.encode(all_resources())):
+#@   if doc.strip():
+---
+#@ yaml.decode(doc)
+#@   end
+#@ end
