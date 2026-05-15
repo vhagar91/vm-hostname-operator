@@ -15,11 +15,11 @@ import (
 
 // Config holds vCenter connection configuration.
 type Config struct {
-	Hostname     string
-	Username     string
-	Password     string
-	InsecureTLS  bool
-	Datacenter   string
+	Hostname    string
+	Username    string
+	Password    string
+	InsecureTLS bool
+	Datacenter  string
 }
 
 // Validator checks hostname uniqueness against vCenter.

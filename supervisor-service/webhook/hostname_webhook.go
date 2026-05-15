@@ -2,12 +2,12 @@
 // generated hostnames into VirtualMachine resources.
 //
 // The webhook intercepts VirtualMachine CREATE operations and:
-// 1. Generates a hostname from the configured template (e.g., "vm-###")
-// 2. Sets metadata.name to the generated hostname
-// 3. Injects the hostname into the VM's bootstrap configuration
-//    (cloud-init hostname, LinuxPrep hostName, or Sysprep ComputerName)
-// 4. Validates uniqueness against vCenter (optional, fail-closed)
-// 5. Rejects VM creation if any step fails
+//  1. Generates a hostname from the configured template (e.g., "vm-###")
+//  2. Sets metadata.name to the generated hostname
+//  3. Injects the hostname into the VM's bootstrap configuration
+//     (cloud-init hostname, LinuxPrep hostName, or Sysprep ComputerName)
+//  4. Validates uniqueness against vCenter (optional, fail-closed)
+//  5. Rejects VM creation if any step fails
 package webhook
 
 import (
@@ -406,7 +406,7 @@ func (s *HostnameService) generateHostnameLocked(ctx context.Context, namespace,
 				Namespace: namespace,
 			},
 			Spec: hostnamev1alpha1.HostnameCounterSpec{
-				Template:    templateStr,
+				Template:     templateStr,
 				CurrentIndex: 0,
 			},
 		}

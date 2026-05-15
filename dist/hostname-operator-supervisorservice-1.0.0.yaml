@@ -1,0 +1,148 @@
+---
+# Supervisor Service identity. `metadata.name` is the service ID validated by
+# vCenter (and, on pre-VCF9 installs, the supervisor-services-allow-list.txt).
+apiVersion: data.packaging.carvel.dev/v1alpha1
+kind: PackageMetadata
+metadata:
+  name: hostname-operator.vcf.vmware.com
+  namespace: tkg-system
+spec:
+  displayName: "VM Hostname Operator"
+  shortDescription: "Automates VM hostname generation from templates with vCenter duplicate validation"
+  longDescription: |
+    Kubernetes operator that automates hostname generation for VirtualMachine
+    resources in VMware Cloud Foundation 9 Supervisor namespaces. Supports
+    configurable hostname templates (e.g., "machinename###"), incremental
+    counters, and validates uniqueness against vCenter before VM creation via
+    a mutating webhook.
+  categories:
+  - hostname
+  - vcf
+  - vmware
+  maintainers:
+  - name: VCF Services Team
+---
+# Versioned Package. `metadata.name` MUST be "<refName>.<version>".
+# The imgpkgBundle image reference is rewritten to an immutable digest by
+# `make supervisor-service-yaml` at release time.
+apiVersion: data.packaging.carvel.dev/v1alpha1
+kind: Package
+metadata:
+  name: hostname-operator.vcf.vmware.com.1.0.0
+  namespace: tkg-system
+spec:
+  refName: hostname-operator.vcf.vmware.com
+  version: 1.0.0
+  releaseNotes: |
+    Initial release of the VM Hostname Operator as a VCF9 Supervisor Service.
+    - HostnameCounter CRD (Namespaced) for per-namespace hostname counters
+    - Configurable hostname template with incremental counters
+    - vCenter duplicate hostname validation via mutating webhook
+    - Annotation-based per-VM template override support
+  valuesSchema:
+    openAPIv3:
+      title: hostname-operator.vcf.vmware.com values schema
+      type: object
+      additionalProperties: false
+      properties:
+        namespace:
+          type: string
+          default: hostname-operator-system
+          description: Namespace where the operator is deployed.
+        image:
+          type: object
+          description: Operator container image settings.
+          properties:
+            repository:
+              type: string
+              default: registry.example.com/hostname-operator
+            tag:
+              type: string
+              default: "1.0.0"
+            pullPolicy:
+              type: string
+              default: IfNotPresent
+              enum: ["Always", "IfNotPresent", "Never"]
+        resources:
+          type: object
+          properties:
+            limits:
+              type: object
+              properties:
+                cpu:
+                  type: string
+                  default: "500m"
+                memory:
+                  type: string
+                  default: "256Mi"
+            requests:
+              type: object
+              properties:
+                cpu:
+                  type: string
+                  default: "100m"
+                memory:
+                  type: string
+                  default: "64Mi"
+        imagePullSecret:
+          type: object
+          description: |
+            Optional registry credentials. If dockerconfigjson is set, a Secret
+            is created and wired to the operator pod.
+          properties:
+            dockerconfigjson:
+              type: string
+              default: ""
+              description: Base64-encoded contents of a .dockerconfigjson file.
+        webhook:
+          type: object
+          description: Webhook server configuration.
+          properties:
+            port:
+              type: integer
+              default: 9443
+            certDir:
+              type: string
+              default: /tmp/k8s-webhook-server/serving-certs
+            serviceName:
+              type: string
+              default: hostname-operator-webhook-service
+            secretName:
+              type: string
+              default: hostname-operator-webhook-cert
+        runtime:
+          type: object
+          description: Operator runtime configuration.
+          properties:
+            logLevel:
+              type: string
+              default: info
+              description: Log level (debug, info, error).
+            defaultTemplate:
+              type: string
+              default: "vm-###"
+              description: Default hostname template pattern.
+            counterStart:
+              type: integer
+              default: 1
+              description: Starting index for hostname counters.
+            vcenterValidation:
+              type: boolean
+              default: true
+              description: Enable vCenter hostname duplicate validation.
+  template:
+    spec:
+      fetch:
+      - imgpkgBundle:
+          # Rewritten to an immutable digest by `make supervisor-service-yaml`.
+          image: localhost:5000/hostname-operator-bundle:1.0.0
+      template:
+      - ytt:
+          paths:
+          - config/
+      - kbld:
+          paths:
+          - "-"
+          - .imgpkg/images.yml
+      deploy:
+      - kapp: {}

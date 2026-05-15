@@ -38,14 +38,14 @@ func init() {
 
 func main() {
 	var (
-		logLevel           string
-		defaultTemplate    string
-		counterStart       int
-		vcenterValidation  bool
-		metricsAddr        string
-		probeAddr          string
-		webhookPort        int
-		webhookCertDir     string
+		logLevel             string
+		defaultTemplate      string
+		counterStart         int
+		vcenterValidation    bool
+		metricsAddr          string
+		probeAddr            string
+		webhookPort          int
+		webhookCertDir       string
 		enableLeaderElection bool
 	)
 
@@ -67,15 +67,15 @@ func main() {
 	ctx := context.Background()
 
 	mgrOpts := ctrl.Options{
-		Scheme:                  scheme,
-		MetricsBindAddress:      metricsAddr,
-		HealthProbeBindAddress:  probeAddr,
+		Scheme:                 scheme,
+		MetricsBindAddress:     metricsAddr,
+		HealthProbeBindAddress: probeAddr,
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:    webhookPort,
 			CertDir: webhookCertDir,
 		}),
-		LeaderElection:                enableLeaderElection,
-		LeaderElectionID:              "hostname-operator-leader",
+		LeaderElection:   enableLeaderElection,
+		LeaderElectionID: "hostname-operator-leader",
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOpts)

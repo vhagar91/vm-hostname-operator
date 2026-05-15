@@ -53,12 +53,7 @@ build: fmt vet ## Build manager binary.
 docker-build: build ## Build docker image with the manager.
 	@mkdir -p $(BUILD_DIR)
 	cp supervisor-service/bin/$(NAME) $(BUILD_DIR)/
-	cat > $(BUILD_DIR)/Dockerfile << 'EOF'
-FROM gcr.io/distroless/static-debian12:nonroot
-COPY $(NAME) /usr/local/bin/$(NAME)
-USER 65532:65532
-ENTRYPOINT ["/usr/local/bin/$(NAME)"]
-EOF
+	printf 'FROM gcr.io/distroless/static-debian12:nonroot\nCOPY %s /usr/local/bin/%s\nUSER 65532:65532\nENTRYPOINT ["/usr/local/bin/%s"]\n' "$(NAME)" "$(NAME)" "$(NAME)" > $(BUILD_DIR)/Dockerfile
 	$(CONTAINER_TOOL) build -t $(IMG) -f $(BUILD_DIR)/Dockerfile $(BUILD_DIR)
 	rm -f $(BUILD_DIR)/$(NAME) $(BUILD_DIR)/Dockerfile
 
