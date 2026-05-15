@@ -1,0 +1,31 @@
+#@data/values
+---
+namespace: hostname-operator-system
+
+image:
+  repository: registry.example.com/hostname-operator
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+  requests:
+    cpu: "100m"
+    memory: "64Mi"
+
+imagePullSecret:
+  dockerconfigjson: ""
+
+webhook:
+  port: 9443
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  serviceName: hostname-operator-webhook-service
+  secretName: hostname-operator-webhook-cert
+
+runtime:
+  logLevel: info
+  defaultTemplate: "vm-###"
+  counterStart: 1
+  vcenterValidation: true

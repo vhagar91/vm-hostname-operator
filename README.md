@@ -1,10 +1,10 @@
 # VM Hostname Operator
 
-A VCF Service that automatically generates unique hostnames for VirtualMachine resources using configurable templates with incremental counters and vCenter duplicate validation.
+A VCF9 Supervisor Service that automatically generates unique hostnames for VirtualMachine resources using configurable templates with incremental counters and vCenter duplicate validation.
 
 ## Overview
 
-The VM Hostname Operator is deployed as a VCF Service across one or more Supervisor clusters. It intercepts VirtualMachine resource creation via a mutating webhook, generates a hostname from a template (e.g., `web-nginx-###`), validates the hostname is unique against vCenter, and rejects VM creation if a unique hostname cannot be determined.
+The VM Hostname Operator is deployed as a VCF9 Supervisor Service. It intercepts VirtualMachine resource creation via a mutating webhook, generates a hostname from a template (e.g., `web-nginx-###`), validates the hostname is unique against vCenter, and rejects VM creation if a unique hostname cannot be determined.
 
 ### How It Works
 
@@ -76,26 +76,21 @@ Rules:
 
 ## Usage
 
-### 1. Deploy the VCF Service
+### 1. Install the Supervisor Service
 
-Use the VCF Automation API to register and activate the service:
+Upload the generated YAML via the vSphere Client:
 
-```bash
-# Variables
-VCFA_HOST="vcfa.example.com"
-API="https://${VCFA_HOST}/api/extension/broadcom/service-manager/v2"
-ACCEPT="application/json;version=41.0.0-alpha"
-TOKEN="<your-bearer-token>"
-
-# Upload and create service
-SERVICE_ID=$(curl -s -X POST "${API}/vcf-services" \
-  -H "Accept: ${ACCEPT}" -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"source": "https://depot.example.com:9443/hostname-operator-1.0.0.tar"}' | jq -r '.id')
-
-# Wait for Ready state, then activate
-# See VCF Service API documentation for full activation workflow
 ```
+vSphere Client → Workload Management → Services → Add New Service
+```
+
+Point it to the YAML produced by `make supervisor-service-yaml`:
+
+```
+dist/hostname-operator-supervisorservice-1.0.0.yaml
+```
+
+The Service ID is: `hostname-operator.vcf.vmware.com`
 
 ### 2. Annotate VMs for Hostname Generation
 
@@ -198,7 +193,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: vcenter-credentials
-  namespace: vm-operator-system
+  namespace: hostname-operator-system
 type: Opaque
 stringData:
   hostname: vcenter.example.com
@@ -213,37 +208,30 @@ If no valid vCenter credentials are found, the operator skips vCenter validation
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                    VCF Automation                              │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                  Service Manager                          │  │
-│  │  Creates SupervisorService CR → deploys Carvel package   │  │
-│  └──────────────────────┬───────────────────────────────────┘  │
-│                         │                                      │
-└─────────────────────────┼──────────────────────────────────────┘
-                          │
-                          ▼
-              ┌─────────────────────────┐
-              │    Supervisor Cluster    │
-              │                         │
-              │  ┌───────────────────┐  │
-              │  │ Hostname Operator │  │
-              │  │                   │  │
-              │  │ ├─ Mutating       │  │
-              │  │ │  Webhook        │──┼── Intercepts VM CREATE
-              │  │ │                  │  │
-              │  │ ├─ Hostname        │  │
-              │  │ │  Service         │──┼── Manages HostnameCounter CRs
-              │  │ │                  │  │
-              │  │ ├─ vCenter         │──┼── Validates against vCenter
-              │  │ │  Validator      │  │
-              │  │ └──────────────────┘  │
-              │                         │
-              │  ┌───────────────────┐  │
-              │  │ HostnameCounter   │  │
-              │  │ CRD               │  │
-              │  └───────────────────┘  │
-              └─────────────────────────┘
+                          VCF9 Supervisor Service
+                          (Carvel Package + imgpkg bundle)
+
+
+                         Supervisor Cluster
+                         │
+                         │  ┌───────────────────────────┐
+                         │  │    Hostname Operator       │
+                         │  │                            │
+                         │  │  ├─ Mutating               │
+                         │  │  │  Webhook                │── Intercepts VM CREATE
+                         │  │  │                         │
+                         │  │  ├─ Hostname               │
+                         │  │  │  Service                │── Manages HostnameCounter CRs
+                         │  │  │                         │
+                         │  │  └─ vCenter                │── Validates against vCenter
+                         │  │     Validator              │
+                         │  │                            │
+                         │  └───────────────────────────┘
+                         │
+                         │  ┌───────────────────────────┐
+                         │  │  HostnameCounter CRD      │
+                         │  │  (hostname.vcf.vmware.com) │
+                         │  └───────────────────────────┘
 ```
 
 ## Resource Model
@@ -280,7 +268,31 @@ The operator accepts the following command-line arguments:
 | `--counter-start` | `1` | Starting index for counters |
 | `--vcenter-validation` | `true` | Enable vCenter duplicate validation |
 
-These can be overridden at install time via the `SupervisorService` CR's values.
+These can be overridden at install time via the Supervisor Service values.
+
+## Install-time Values
+
+When deploying the Supervisor Service via vSphere Client, you can configure:
+
+| Value Path | Default | Description |
+|------------|---------|-------------|
+| `namespace` | `hostname-operator-system` | Deployment namespace |
+| `image.repository` | `registry.example.com/hostname-operator` | Operator image repository |
+| `image.tag` | `1.0.0` | Operator image tag |
+| `image.pullPolicy` | `IfNotPresent` | Image pull policy |
+| `imagePullSecret.dockerconfigjson` | `""` | Registry credentials (optional) |
+| `resources.limits.cpu` | `500m` | CPU limit |
+| `resources.limits.memory` | `256Mi` | Memory limit |
+| `resources.requests.cpu` | `100m` | CPU request |
+| `resources.requests.memory` | `64Mi` | Memory request |
+| `webhook.port` | `9443` | Webhook server port |
+| `webhook.certDir` | `/tmp/k8s-webhook-server/serving-certs` | TLS cert directory |
+| `webhook.serviceName` | `hostname-operator-webhook-service` | Webhook service name |
+| `webhook.secretName` | `hostname-operator-webhook-cert` | TLS cert secret name |
+| `runtime.logLevel` | `info` | Log level |
+| `runtime.defaultTemplate` | `vm-###` | Default hostname template |
+| `runtime.counterStart` | `1` | Starting counter index |
+| `runtime.vcenterValidation` | `true` | Enable vCenter validation |
 
 ## Error Handling
 
@@ -313,67 +325,78 @@ cd supervisor-service
 CGO_ENABLED=0 go build -o bin/hostname-operator .
 ```
 
-### Building the VCF Service Tarball
+### Building and Publishing the Supervisor Service
 
-The build produces the `hostname-operator-1.0.0.tar` file that gets uploaded to VCF Automation.
-
-#### Method 1: Production Build (full pipeline with image locking)
+#### Full Release (build + push + bundle + service YAML)
 
 ```bash
-# From the hostname-operator directory
-make quick REGISTRY=my-registry.example.com
+# From the hostname-operator root directory
+make supervisor-release REGISTRY=my-registry.example.com
 ```
 
-This runs the full pipeline:
-1. `make build-go` — Compile the Go binary
-2. `make docker-build` — Build the container image
-3. `make docker-push` — Push image to registry
-4. `make kbld-lock` — Lock all image references into `.imgpkg/images.yml`
-5. `make bundle` — Push the Carvel bundle to the registry
-6. `make tarball` — Export the bundle to `dist/hostname-operator-1.0.0.tar`
+This runs:
+1. `make docker-build` — Build operator Go binary + container image
+2. `make docker-push` — Push operator image to registry
+3. `make supervisor-bundle` — Run ytt → kbld → build imgpkg bundle → push to registry
+4. `make supervisor-service-yaml` — Generate upload-ready Package YAML
 
-The tarball is now ready at `dist/hostname-operator-1.0.0.tar` (self-contained, includes all OCI images).
+The output file is:
 
-#### Method 2: Offline/Source Tarball (quick packaging without registry)
+```
+dist/hostname-operator-supervisorservice-1.0.0.yaml
+```
+
+Upload this YAML via vSphere Client → Workload Management → Services → Add New Service.
+
+#### Step-by-step
 
 ```bash
-# From the hostname-operator directory
-make offline-tarball
+# 1. Build and push the operator image
+make docker-build docker-push IMG=my-registry.example.com/hostname-operator:1.0.0
+
+# 2. Build and push the Carvel bundle (includes all templates + locked images)
+make supervisor-bundle IMG=my-registry.example.com/hostname-operator:1.0.0 \
+    BUNDLE_IMG=my-registry.example.com/hostname-operator-bundle:1.0.0
+
+# 3. Generate the upload-ready Package YAML
+make supervisor-service-yaml BUNDLE_IMG=my-registry.example.com/hostname-operator-bundle:1.0.0
 ```
 
-Creates `dist/hostname-operator-1.0.0.tar` with the source files. This tarball can be uploaded to VCF Automation directly, but requires the Service Manager to pull images from a registry at activation time.
+### Offline / Air-Gapped Environments
 
-#### Method 3: Manual tarball creation
+#### Step 1: Build and export the bundle as a tarball (on a connected host)
 
 ```bash
-# From the hostname-operator directory
-mkdir -p dist
-tar -cvf dist/hostname-operator-1.0.0.tar \
-    --exclude='dist' \
-    --exclude='.imgpkg' \
-    --exclude='supervisor-service/bin' \
-    .
+make supervisor-release REGISTRY=my-registry.example.com
+make supervisor-offline-tar BUNDLE_IMG=my-registry.example.com/hostname-operator-bundle:1.0.0
 ```
 
-The tarball should contain:
+Produces: `dist/hostname-operator-airgap-1.0.0.tar`
+
+#### Step 2: Transfer to air-gapped lab and import
+
+```bash
+# Copy dist/hostname-operator-airgap-1.0.0.tar and
+# dist/hostname-operator-supervisorservice-1.0.0.yaml to the lab.
+
+# Import the bundle to a local registry
+make supervisor-offline-import \
+    TAR=hostname-operator-airgap-1.0.0.tar \
+    DEST_REPO=nexus.corp/vcf/hostname-operator-bundle \
+    SERVICE_YAML=hostname-operator-supervisorservice-1.0.0.yaml
 ```
-package.yml
-config/values.yml
-config/vcf-service.yml
-config/hostname-operator.lib.yml
-.values/render.yml
-.values/transpiler.yml
-supervisor-service/package.yml
-supervisor-service/config/values.yml
-supervisor-service/config/deployment.yml
-supervisor-service/go.mod
-supervisor-service/main.go
-supervisor-service/api/v1alpha1/hostnamecounter_types.go
-supervisor-service/api/v1alpha1/groupversion_info.go
-supervisor-service/controllers/hostnamecounter_controller.go
-supervisor-service/webhook/hostname_webhook.go
-supervisor-service/pkg/template/template.go
-supervisor-service/pkg/vcenter/validator.go
+
+Upload the pinned `hostname-operator-supervisorservice-1.0.0.yaml` via vSphere Client.
+
+### Relocating to a Different Registry
+
+```bash
+make supervisor-relocate \
+    BUNDLE_IMG=ghcr.io/myorg/hostname-operator-bundle:1.0.0 \
+    DEST_REPO=nexus.corp/vcf/hostname-operator-bundle
+
+# Then regenerate the service YAML with the relocated digest
+make supervisor-service-yaml BUNDLE_IMG=nexus.corp/vcf/hostname-operator-bundle:1.0.0
 ```
 
 ### Validating Templates
@@ -391,44 +414,74 @@ make help
 
 | Target | Description |
 |--------|-------------|
-| `all` | Full build pipeline (clean → build → docker → kbld → bundle → tarball) |
-| `build-go` | Build the Go operator binary |
+| `build` | Build the Go operator binary |
 | `docker-build` | Build Docker image |
 | `docker-push` | Push Docker image to registry |
-| `kbld-lock` | Lock image references |
-| `bundle` | Build Carvel bundle |
-| `tarball` | Export bundle to tarball |
-| `quick` | Run full pipeline with one command |
-| `offline-tarball` | Create source-only tarball without registry |
+| `supervisor-crd-sync` | Sync CRD into bundle |
+| `supervisor-bundle` | Build and push imgpkg bundle (ytt + kbld) |
+| `supervisor-service-yaml` | Generate upload-ready Package YAML |
+| `supervisor-release` | One-shot: build + push + bundle + service YAML |
+| `supervisor-relocate` | Relocate bundle to a different registry |
+| `supervisor-offline-tar` | Export bundle as air-gap tarball |
+| `supervisor-offline-import` | Import air-gap tarball into a registry |
 | `validate` | Validate ytt templates |
 | `clean` | Clean build artifacts |
 | `help` | Show help message |
 
-## Files
+### Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IMG` | `registry.example.com/hostname-operator:1.0.0` | Operator image reference |
+| `REGISTRY` | `registry.example.com` | Container registry |
+| `VERSION` | `1.0.0` | Release version |
+| `BUNDLE_IMG` | `$(REGISTRY)/hostname-operator-bundle:$(VERSION)` | Bundle image reference |
+| `DEST_REPO` | (required for relocate) | Destination registry repo |
+
+## Project Structure
 
 ```
-vcf-services/hostname-operator/
-├── package.yml                                    # VCF Service Package definition
+hostname-operator/
+├── Makefile                                           # Build targets (VCF9 Supervisor Service)
+├── package.yml                                        # Placeholder (source in config/supervisor-service/package/)
 ├── config/
-│   ├── values.yml                                 # ytt data values schema
-│   ├── vcf-service.yml                            # Entry point template
-│   └── hostname-operator.lib.yml                  # SupervisorService CR generator
-├── .values/
-│   ├── render.yml                                 # Build-time example values
-│   └── transpiler.yml                             # Inventory transform
-└── supervisor-service/                            # Go operator source
-    ├── package.yml                                # Supervisor Service Package
-    ├── config/
-    │   ├── values.yml                             # Deployment values
-    │   └── deployment.yml                         # Kubernetes manifests
-    ├── main.go                                    # Entrypoint
+│   └── supervisor-service/                            # VCF9 Supervisor Service definition
+│       ├── kustomization.yaml                         # Guard to prevent accidental kustomize
+│       ├── sample-values.yaml                         # Documented sample install-time values
+│       ├── bundle/                                    # imgpkg bundle content
+│       │   └── config/
+│       │       ├── schema.yaml                        # ytt values schema
+│       │       ├── values.yaml                        # ytt default values
+│       │       ├── 001-namespace.yaml                 # Namespace + imagePullSecret
+│       │       ├── 002-crd.yaml                       # HostnameCounter CRD
+│       │       ├── 003-rbac.yaml                      # RBAC (ServiceAccount + ClusterRole + Binding)
+│       │       └── 004-manager.yaml                   # Deployment + Service + MutatingWebhook
+│       └── package/                                   # Carvel Package source
+│           ├── package-metadata.yaml                  # Service identity (hostname-operator.vcf.vmware.com)
+│           └── package.yaml                           # Versioned Package with valuesSchema + template
+└── supervisor-service/                                # Go operator source
+    ├── main.go                                        # Entrypoint
+    ├── go.mod                                         # Go module
     ├── api/v1alpha1/
-    │   ├── hostnamecounter_types.go               # CRD types
-    │   └── groupversion_info.go                   # API group
+    │   ├── hostnamecounter_types.go                   # CRD types
+    │   └── groupversion_info.go                       # API group registration
     ├── controllers/
-    │   └── hostnamecounter_controller.go          # Counter controller
+    │   └── hostnamecounter_controller.go              # Counter reconciliation
     ├── webhook/
-    │   └── hostname_webhook.go                    # Mutating webhook
+    │   └── hostname_webhook.go                        # Mutating webhook handler
     └── pkg/
-        ├── template/template.go                   # Template engine
-        └── vcenter/validator.go                   # vCenter validator
+        ├── template/template.go                       # Template parsing & rendering
+        └── vcenter/validator.go                       # vCenter uniqueness checks
+```
+
+## Comparison with vcf-salt-operator
+
+This project follows the same VCF9 Supervisor Service structure as `vcf-salt-operator`:
+
+| Aspect | hostname-operator | vcf-salt-operator |
+|--------|-------------------|-------------------|
+| Service ID | `hostname-operator.vcf.vmware.com` | `vcf-salt-operator.salt.vcf.io` |
+| Bundle path | `config/supervisor-service/bundle/` | `config/supervisor-service/bundle/` |
+| Package source | `config/supervisor-service/package/` | `config/supervisor-service/package/` |
+| Build system | Carvel (ytt + kbld + imgpkg + kapp) | Carvel (ytt + kbld + imgpkg + kapp) |
+| Deployment | VCF9 Supervisor Service | VCF9 Supervisor Service |

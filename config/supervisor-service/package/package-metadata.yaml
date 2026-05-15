@@ -1,0 +1,23 @@
+---
+# Supervisor Service identity. `metadata.name` is the service ID validated by
+# vCenter (and, on pre-VCF9 installs, the supervisor-services-allow-list.txt).
+apiVersion: data.packaging.carvel.dev/v1alpha1
+kind: PackageMetadata
+metadata:
+  name: hostname-operator.vcf.vmware.com
+  namespace: tkg-system
+spec:
+  displayName: "VM Hostname Operator"
+  shortDescription: "Automates VM hostname generation from templates with vCenter duplicate validation"
+  longDescription: |
+    Kubernetes operator that automates hostname generation for VirtualMachine
+    resources in VMware Cloud Foundation 9 Supervisor namespaces. Supports
+    configurable hostname templates (e.g., "machinename###"), incremental
+    counters, and validates uniqueness against vCenter before VM creation via
+    a mutating webhook.
+  categories:
+  - hostname
+  - vcf
+  - vmware
+  maintainers:
+  - name: VCF Services Team

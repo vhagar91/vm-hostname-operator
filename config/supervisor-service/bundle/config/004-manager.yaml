@@ -1,0 +1,126 @@
+#@ load("@ytt:data", "data")
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hostname-operator
+  namespace: #@ data.values.namespace
+  labels:
+    app.kubernetes.io/name: hostname-operator
+    app.kubernetes.io/managed-by: supervisor-service
+    control-plane: controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+        app.kubernetes.io/name: hostname-operator
+    spec:
+      serviceAccountName: hostname-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: #@ data.values.image.repository + ":" + data.values.image.tag
+          imagePullPolicy: #@ data.values.image.pullPolicy
+          args:
+            - --log-level=#@ data.values.runtime.logLevel
+            - --default-template=#@ data.values.runtime.defaultTemplate
+            - --counter-start=#@ str(data.values.runtime.counterStart)
+            - --vcenter-validation=#@ str(data.values.runtime.vcenterValidation)
+          ports:
+            - containerPort: #@ data.values.webhook.port
+              name: webhook
+              protocol: TCP
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: #@ data.values.webhook.certDir
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: #@ data.values.resources.requests.cpu
+              memory: #@ data.values.resources.requests.memory
+            limits:
+              cpu: #@ data.values.resources.limits.cpu
+              memory: #@ data.values.resources.limits.memory
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: #@ data.values.webhook.secretName
+            defaultMode: 420
+      #@ if data.values.imagePullSecret.dockerconfigjson != "":
+      imagePullSecrets:
+        - name: registry-credentials
+      #@ end
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: #@ data.values.webhook.serviceName
+  namespace: #@ data.values.namespace
+  labels:
+    app.kubernetes.io/name: hostname-operator
+    app.kubernetes.io/managed-by: supervisor-service
+spec:
+  ports:
+    - port: 443
+      targetPort: #@ data.values.webhook.port
+      name: webhook
+  selector:
+    control-plane: controller-manager
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: hostname-operator-mutating-webhook
+  labels:
+    app.kubernetes.io/name: hostname-operator
+    app.kubernetes.io/managed-by: supervisor-service
+webhooks:
+  - name: hostname.hostname-operator.vcf.vmware.com
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: #@ data.values.webhook.serviceName
+        namespace: #@ data.values.namespace
+        path: /mutate-vmoperator-vmware-com-v1alpha6-virtualmachine
+      caBundle: Cg==
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups:
+          - vmoperator.vmware.com
+        apiVersions:
+          - v1alpha1
+          - v1alpha2
+          - v1alpha3
+          - v1alpha4
+          - v1alpha5
+          - v1alpha6
+        operations:
+          - CREATE
+        resources:
+          - virtualmachines
+        scope: Namespaced
+    sideEffects: None
+    timeoutSeconds: 10
+    objectSelector:
+      matchExpressions:
+        - key: hostname.vcf.vmware.com/template
+          operator: Exists
+    reinvocationPolicy: IfNeeded

@@ -1,0 +1,47 @@
+#@data/values-schema
+---
+#@schema/desc "Namespace where the hostname operator is deployed."
+namespace: hostname-operator-system
+
+#@schema/desc "Operator container image settings."
+image:
+  repository: registry.example.com/hostname-operator
+  tag: "1.0.0"
+  #@schema/validation one_of=["Always", "IfNotPresent", "Never"]
+  pullPolicy: IfNotPresent
+
+#@schema/desc "Controller resource requests and limits."
+resources:
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+  requests:
+    cpu: "100m"
+    memory: "64Mi"
+
+#@schema/desc "Optional registry credentials for pulling the operator image."
+imagePullSecret:
+  #@schema/desc "Base64-encoded contents of a .dockerconfigjson file. Empty = no imagePullSecret."
+  dockerconfigjson: ""
+
+#@schema/desc "Webhook configuration."
+webhook:
+  #@schema/desc "Port the webhook server listens on."
+  port: 9443
+  #@schema/desc "Directory where webhook TLS certificates are mounted."
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  #@schema/desc "Name of the Kubernetes Service for the webhook."
+  serviceName: hostname-operator-webhook-service
+  #@schema/desc "Name of the Secret containing webhook TLS certificates."
+  secretName: hostname-operator-webhook-cert
+
+#@schema/desc "Operator runtime configuration."
+runtime:
+  #@schema/desc "Log level (debug, info, error)."
+  logLevel: info
+  #@schema/desc "Default hostname template pattern (e.g., 'vm-###' where # is a digit placeholder)."
+  defaultTemplate: "vm-###"
+  #@schema/desc "Starting index for hostname counters."
+  counterStart: 1
+  #@schema/desc "Enable vCenter hostname duplicate validation."
+  vcenterValidation: true
